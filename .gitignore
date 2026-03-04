@@ -1,0 +1,56 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+*.env
+
+# ── YouTube / yt-dlp cookies ──────────────────────────────────────────────────
+yt_cookies.txt
+cookies.txt
+*.cookies.txt
+
+# ── Temporary / downloaded media ─────────────────────────────────────────────
+*.mp4
+*.mkv
+*.webm
+*.wav
+*.mp3
+*.m4a
+*.json3
+*.vtt
+*.srt
+*.ttml
+*.part
+*.ytdl
+*.temp
+
+# ── yt-dlp metadata ───────────────────────────────────────────────────────────
+*.info.json
+*.description
+*.thumbnails/
+
+# ── Processed-video state ─────────────────────────────────────────────────────
+processed_videos.json
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+server.log
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ── n8n credential exports ────────────────────────────────────────────────────
+*credentials*.json
+n8n-credentials*.json
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/

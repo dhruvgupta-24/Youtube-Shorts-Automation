@@ -14,7 +14,9 @@ import glob
 import json
 import logging
 import os
-os.environ["PATH"] = r"C:\ffmpeg\bin" + os.pathsep + os.environ.get("PATH", "")
+_ffmpeg_bin = os.environ.get("FFMPEG_BIN", r"C:\ffmpeg\bin")
+if _ffmpeg_bin:
+    os.environ["PATH"] = _ffmpeg_bin + os.pathsep + os.environ.get("PATH", "")
 import re
 import shutil
 import subprocess
