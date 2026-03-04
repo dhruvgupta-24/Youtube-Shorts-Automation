@@ -1,13 +1,3 @@
-"""
-YouTube Shorts Automation — Flask Backend v12
-=============================================
-FIXES vs v11:
-  1. QUALITY: Try multiple player clients in order until we get >=720p.
-     tv_embedded → web → ios → android. Probe the result and log it.
-  2. MULTI-CLIP: score_transcript always returns exactly top_n=4 clips.
-  3. All endpoints cleaned up and stable.
-"""
-
 from __future__ import annotations
 
 import glob
