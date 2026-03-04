@@ -1,0 +1,1152 @@
+{
+  "name": "Youtube Shorts Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1664,
+        -240
+      ],
+      "id": "1f2fa3cc-36fc-4b66-9dc2-45d008067db1",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1664,
+        -432
+      ],
+      "id": "44fe84e1-e8f6-45cb-8136-1cf09518e688",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ch1",
+              "name": "channels",
+              "value": "[{\"id\":\"UCX6OQ3DkcsbYNE6H8uQQuVA\",\"name\":\"MrBeast\"},{\"id\":\"UCDogdKl7t7NHzQ95aEwkdMw\",\"name\":\"Sidemen\"},{\"id\":\"UCWsDFcIhY2DBi3GB5uykGXA\",\"name\":\"IShowSpeed\"},{\"id\":\"UCh5mLn90vUaB1PbRRx_AiaA\",\"name\":\"MoreSidemen\"}]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1440,
+        -336
+      ],
+      "id": "10f8f41b-d437-4cbe-a28e-6327a997cf50",
+      "name": "Set Channels"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = items[0].json.channels;\nconst all = typeof raw === 'string' ? JSON.parse(raw) : raw;\nif (!Array.isArray(all) || all.length === 0) throw new Error('No channels');\nreturn all.map(ch => ({ json: { channel: ch } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        -336
+      ],
+      "id": "9915e6c2-c0d4-488f-8d8f-e8d286c4cb90",
+      "name": "Parse Channels"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={{ $json.channel.id }}&order=date&maxResults=5&type=video&key=AIzaSyB6FsjgjL12mjXOhZoKYTvjh3j4uHmV6zA",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 12000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -992,
+        -336
+      ],
+      "id": "c27eb52a-57cc-425e-874e-97682ef78a89",
+      "name": "Fetch Latest Video"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet&id={{ $json.items.map(i => i.id.videoId).filter(Boolean).join(',') }}&key=AIzaSyB6FsjgjL12mjXOhZoKYTvjh3j4uHmV6zA",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -784,
+        -336
+      ],
+      "id": "8e39c7e6-cf87-4f56-9b17-61f5cd9227ae",
+      "name": "Fetch Video Duration"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\nif (!data.items || data.items.length === 0) return { json: { skip: true, reason: 'No items', videoId: '', channelId: '', videoTitle: '', channelTitle: '' } };\nfor (const item of data.items) {\n  const snippet = item.snippet || {};\n  const details = item.contentDetails || {};\n  const title = snippet.title || '';\n  const m = (details.duration || '').match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/);\n  const total = parseInt(m?.[1]||0)*3600 + parseInt(m?.[2]||0)*60 + parseInt(m?.[3]||0);\n  if (total > 0 && total < 121) continue;\n  if (title.toLowerCase().includes('#short')) continue;\n  if (total < 480) continue;\n  return { json: { skip: false, videoId: item.id, channelId: snippet.channelId||'', videoTitle: title, channelTitle: snippet.channelTitle||'', totalSeconds: total } };\n}\nreturn { json: { skip: true, reason: 'No suitable video', videoId: '', channelId: data.items[0]?.snippet?.channelId||'', videoTitle: '', channelTitle: '' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -336
+      ],
+      "id": "ca92a1cb-8be0-4cf3-9f22-e5b16050757f",
+      "name": "Filter Shorts"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fs = require('fs');\nconst it = $input.item.json;\nif (it.skip === true) return { json: it };\nconst { videoId='', channelId='', videoTitle='', channelTitle='' } = it;\nif (!videoId) return { json: { skip: true, reason: 'No videoId', videoId:'', channelId, videoTitle, channelTitle } };\nlet processed = {};\ntry {\n  if (fs.existsSync('C:/tmp/processed_videos.json')) {\n    const raw = fs.readFileSync('C:/tmp/processed_videos.json','utf8').trim();\n    if (raw) processed = JSON.parse(raw);\n  }\n} catch(e) {}\nconst entry = processed[channelId];\n// ONLY skip when fully completed — never block on 'uploading'\nif (entry && entry.videoId === videoId && entry.status === 'completed') {\n  return { json: { skip: true, reason: 'Already fully completed', videoId, channelId, videoTitle, channelTitle } };\n}\nconst uploadedTimestamps = (entry && entry.videoId === videoId && Array.isArray(entry.clips))\n  ? entry.clips.map(c => ({ start: c.start, end: c.end, clipIndex: c.clipIndex }))\n  : [];\nreturn { json: { skip: false, videoId, channelId, videoTitle, channelTitle, uploadedTimestamps } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -336
+      ],
+      "id": "16f8b06f-4fc9-4b3c-9d12-de61cfae2b95",
+      "name": "Check Processed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -96,
+        -336
+      ],
+      "id": "3afcbc7b-f092-4332-96a7-877ab4b84825",
+      "name": "Is New Video?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/detect_strategy",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        128,
+        -336
+      ],
+      "id": "474b1a69-2a11-4daa-bebd-40f15354e097",
+      "name": "Detect Strategy"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\nreturn [{ json: { videoId: d.videoId||'', videoTitle: d.videoTitle||'', channelId: d.channelId||'', channelTitle: d.channelTitle||'', strategy: typeof d.strategy==='number'?d.strategy:3 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -336
+      ],
+      "id": "88e9c4fa-5775-4a4b-9b14-6d6555a74d52",
+      "name": "Normalize Strategy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.strategy }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        576,
+        -336
+      ],
+      "id": "b7233fbb-55bb-4971-a7eb-855f46ea2507",
+      "name": "Is Strategy 1?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/fetch_captions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1248,
+        -528
+      ],
+      "id": "943b6466-4b9f-4b38-a6be-e56e70a88506",
+      "name": "S1: Fetch Captions"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\nif (!d.success) throw new Error('Captions failed: '+(d.error||'?'));\nlet uploadedTimestamps = [];\ntry { uploadedTimestamps = $('Check Processed').item.json.uploadedTimestamps || []; } catch(e) {}\nreturn [{ json: {\n  videoId: d.videoId||'', videoTitle: d.videoTitle||'',\n  channelId: d.channelId||'', channelTitle: d.channelTitle||'',\n  strategy: 1, videoPath: null,\n  detectedLanguage: d.detectedLanguage||'en',\n  segments: Array.isArray(d.segments) ? d.segments : [],\n  uploadedTimestamps\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        -528
+      ],
+      "id": "f6508ee6-f8f6-4415-9379-e8db36a4e74a",
+      "name": "S1: Prepare Score Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/score_transcript",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, strategy: $json.strategy, segments: $json.segments, detectedLanguage: $json.detectedLanguage, uploadedTimestamps: $json.uploadedTimestamps || [] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1696,
+        -528
+      ],
+      "id": "e500427b-f1f7-47a0-a29b-6a0cad3c05a5",
+      "name": "S1: Score Transcript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.strategy }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        -240
+      ],
+      "id": "f28c2c10-fd1f-4331-8a97-7760e0257f71",
+      "name": "Is Strategy 2?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/download_full",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 900000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1024,
+        -336
+      ],
+      "id": "fefce9e9-1b74-42e5-986c-c37a21521208",
+      "name": "S2: Download Full"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/transcribe_chunked",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, videoPath: $json.videoPath }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 1860000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1248,
+        -336
+      ],
+      "id": "d951c096-2181-4d78-850e-f2bc1db27367",
+      "name": "S2: Transcribe"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\nif (!d.success) throw new Error('Transcribe failed: '+(d.error||'?'));\nlet uploadedTimestamps = [];\ntry { uploadedTimestamps = $('Check Processed').item.json.uploadedTimestamps || []; } catch(e) {}\nreturn [{ json: {\n  videoId: d.videoId||'', videoTitle: d.videoTitle||'',\n  channelId: d.channelId||'', channelTitle: d.channelTitle||'',\n  strategy: 2, videoPath: d.videoPath||'',\n  detectedLanguage: d.detectedLanguage||'en',\n  segments: Array.isArray(d.segments) ? d.segments : [],\n  uploadedTimestamps\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        -336
+      ],
+      "id": "28fd1ca7-582c-48d6-806f-766e34e5cdf4",
+      "name": "S2: Prepare Score Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/score_transcript",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, strategy: $json.strategy, videoPath: $json.videoPath, segments: $json.segments, detectedLanguage: $json.detectedLanguage, uploadedTimestamps: $json.uploadedTimestamps || [] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1696,
+        -336
+      ],
+      "id": "9a3419fc-8a4d-4dc7-a6fb-8ed9d3b103a7",
+      "name": "S2: Score Transcript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/fetch_comment_timestamps",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 90000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1696,
+        -144
+      ],
+      "id": "81aba3a1-79e6-408b-ae62-1df2680a7738",
+      "name": "S3: Comment Timestamps"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\nconst base = {\n  videoId: d.videoId||'', videoTitle: d.videoTitle||'',\n  channelId: d.channelId||'', channelTitle: d.channelTitle||'',\n  strategy: typeof d.strategy==='number' ? d.strategy : 1,\n  videoPath: d.videoPath||null, detectedLanguage: d.detectedLanguage||'en'\n};\nif (!d.success || !Array.isArray(d.clips) || d.clips.length === 0) {\n  return [{ json: { ...base, success:false, error:d.error||'No clips',\n    start:'00:00', end:'01:00', title:'', shortTitle:'', description:'',\n    clipIndex:1, score:0, totalClips:1 } }];\n}\nconst totalClips = d.clips.length;\n// Each item carries ALL its own data — no downstream node needs to\n// reference back to this node via $('Split Clips').item\nreturn d.clips.map((c, i) => ({\n  json: {\n    success: true,\n    videoId:          c.videoId      || base.videoId,\n    videoTitle:       c.videoTitle   || base.videoTitle,\n    channelId:        c.channelId    || base.channelId,\n    channelTitle:     c.channelTitle || base.channelTitle,\n    strategy:         base.strategy,\n    videoPath:        c.videoPath    || base.videoPath || null,\n    detectedLanguage: c.detectedLanguage || base.detectedLanguage,\n    clipPath:         null,\n    start:            c.start   || '00:00',\n    end:              c.end     || '01:00',\n    title:            c.title   || ('Clip ' + (i+1)),\n    shortTitle:       c.shortTitle  || ((c.videoTitle||base.videoTitle) + ' #Shorts'),\n    description:      c.description || '#Shorts #YouTubeShorts',\n    clipIndex:        c.clipIndex   || (i+1),\n    score:            typeof c.score==='number' ? c.score : 0,\n    totalClips\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        -336
+      ],
+      "id": "68982bd3-02d3-4b7e-b174-1baf3efd32b7",
+      "name": "Split Clips"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2160,
+        -336
+      ],
+      "id": "6a4f1fe4-7b4f-4e25-8a7d-a166107e6584",
+      "name": "Clip Data Valid?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c5",
+              "leftValue": "={{ $json.strategy }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2384,
+        -336
+      ],
+      "id": "7bc9923e-27c6-4e52-8f43-54da9bf136b5",
+      "name": "Is Full Video Available?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/clip",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, videoPath: $json.videoPath, start: $json.start, end: $json.end, clipIndex: $json.clipIndex, title: $json.title, totalClips: $json.totalClips, shortTitle: $json.shortTitle, description: $json.description }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 300000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2608,
+        -432
+      ],
+      "id": "b8cc83d6-3856-4c0c-9332-8835d6643e70",
+      "name": "Cut & Crop Clip"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/download_section",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, start: $json.start, end: $json.end, clipIndex: $json.clipIndex, title: $json.title, totalClips: $json.totalClips, shortTitle: $json.shortTitle, description: $json.description }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2608,
+        -240
+      ],
+      "id": "02c2916e-cebf-495b-ab2c-9351e057f4ca",
+      "name": "Download Section"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\n// All metadata is in the item itself — server echoes back clipIndex,\n// totalClips, shortTitle, description from what we sent in the request.\nif (!d.success || !d.clipPath) {\n  return [{ json: {\n    success:      false,\n    error:        d.error || 'No clipPath returned by server',\n    videoId:      d.videoId      || '',\n    videoTitle:   d.videoTitle   || '',\n    channelId:    d.channelId    || '',\n    channelTitle: d.channelTitle || '',\n    clipPath:     null,\n    videoPath:    d.videoPath    || null,\n    clipIndex:    d.clipIndex    || 1,\n    totalClips:   d.totalClips   || 1,\n    shortTitle:   d.shortTitle   || '',\n    description:  d.description  || '#Shorts #YouTubeShorts',\n    start:        d.start        || '',\n    end:          d.end          || '',\n    title:        d.title        || ''\n  } }];\n}\nreturn [{ json: {\n  ...d,\n  shortTitle:  d.shortTitle  || (d.videoTitle + ' #Shorts'),\n  description: d.description || '#Shorts #YouTubeShorts',\n  totalClips:  d.totalClips  || 1\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2832,
+        -336
+      ],
+      "id": "8a33913c-561b-4a37-bdb2-d764d7866c98",
+      "name": "Post-Download Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c6",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3056,
+        -336
+      ],
+      "id": "be867aab-4811-4200-ad13-0af817259ca8",
+      "name": "Clip File Ready?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/mark_processed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, clipIndex: $json.clipIndex, totalClips: $json.totalClips, start: $json.start, end: $json.end, clipPath: $json.clipPath, videoPath: $json.videoPath, shortTitle: $json.shortTitle, description: $json.description, title: $json.title, status: 'uploading', pathsToDelete: [] }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3280,
+        -336
+      ],
+      "id": "1f9a9125-802d-4f8c-b5ab-84b122e7d08f",
+      "name": "Mark Upload Started"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs   = require('fs');\nconst path = require('path');\n// items[0] is the Mark Upload Started response.\n// The server now echoes back clipPath + all metadata in its response,\n// so we can safely use items[0].json for everything.\nconst d = items[0].json;\nconst clipPath = d.clipPath;\nif (!clipPath) throw new Error('clipPath missing from Mark Upload Started response. Got: ' + JSON.stringify(d));\nif (!fs.existsSync(clipPath)) throw new Error('Clip file not found on disk: ' + clipPath);\nconst buf = fs.readFileSync(clipPath);\nreturn [{\n  json: { ...d },\n  binary: {\n    data: {\n      data:     buf.toString('base64'),\n      mimeType: 'video/mp4',\n      fileName: path.basename(clipPath)\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3504,
+        -336
+      ],
+      "id": "d7ec4794-140f-4608-9046-5c23bcada44a",
+      "name": "Read Clip Binary"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.shortTitle }}",
+        "regionCode": "IN",
+        "categoryId": "=22",
+        "options": {
+          "description": "={{ $json.description }}",
+          "privacyStatus": "public",
+          "tags": "Shorts"
+        }
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3728,
+        -336
+      ],
+      "id": "165ce389-d5ea-4bcb-be5a-276e5a4d5cca",
+      "name": "Upload to YouTube",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "IgCx2xMXtk4VXtHe",
+          "name": "YouTube account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = items[0].json;\n// items[0] here is the YouTube upload response merged with our clip data\n// that was passed through Read Clip Binary → Upload to YouTube\nconst clipIndex  = d.clipIndex  || 1;\nconst totalClips = d.totalClips || 1;\nconst status = (clipIndex >= totalClips) ? 'completed' : 'uploading';\nconst pathsToDelete = (status === 'completed')\n  ? [d.clipPath, d.videoPath].filter(Boolean)\n  : [d.clipPath].filter(Boolean);\nreturn [{ json: {\n  videoId:      d.videoId      || '',\n  videoTitle:   d.videoTitle   || '',\n  channelId:    d.channelId    || '',\n  channelTitle: d.channelTitle || '',\n  clipIndex, totalClips,\n  start: d.start || '', end: d.end || '',\n  status, pathsToDelete\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        -336
+      ],
+      "id": "15de6454-4e01-48ec-a375-045faf689a3c",
+      "name": "Build Mark Processed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/mark_processed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ videoId: $json.videoId, videoTitle: $json.videoTitle, channelId: $json.channelId, channelTitle: $json.channelTitle, clipIndex: $json.clipIndex, start: $json.start, end: $json.end, status: $json.status, pathsToDelete: $json.pathsToDelete }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4176,
+        -336
+      ],
+      "id": "38b84030-4668-48a3-b209-722e34d1f86c",
+      "name": "Mark Processed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.218.236:8000/cleanup",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4400,
+        -336
+      ],
+      "id": "9c928029-7b83-44d8-9491-e0ac1918dac3",
+      "name": "Cleanup Temp Files"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Channels": {
+      "main": [
+        [
+          {
+            "node": "Parse Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Channels": {
+      "main": [
+        [
+          {
+            "node": "Fetch Latest Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Latest Video": {
+      "main": [
+        [
+          {
+            "node": "Fetch Video Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Video Duration": {
+      "main": [
+        [
+          {
+            "node": "Filter Shorts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Shorts": {
+      "main": [
+        [
+          {
+            "node": "Check Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Processed": {
+      "main": [
+        [
+          {
+            "node": "Is New Video?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Video?": {
+      "main": [
+        [
+          {
+            "node": "Detect Strategy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Strategy": {
+      "main": [
+        [
+          {
+            "node": "Normalize Strategy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Strategy": {
+      "main": [
+        [
+          {
+            "node": "Is Strategy 1?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Strategy 1?": {
+      "main": [
+        [
+          {
+            "node": "S1: Fetch Captions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Strategy 2?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Strategy 2?": {
+      "main": [
+        [
+          {
+            "node": "S2: Download Full",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "S3: Comment Timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S1: Fetch Captions": {
+      "main": [
+        [
+          {
+            "node": "S1: Prepare Score Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S1: Prepare Score Payload": {
+      "main": [
+        [
+          {
+            "node": "S1: Score Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S1: Score Transcript": {
+      "main": [
+        [
+          {
+            "node": "Split Clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S2: Download Full": {
+      "main": [
+        [
+          {
+            "node": "S2: Transcribe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S2: Transcribe": {
+      "main": [
+        [
+          {
+            "node": "S2: Prepare Score Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S2: Prepare Score Payload": {
+      "main": [
+        [
+          {
+            "node": "S2: Score Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S2: Score Transcript": {
+      "main": [
+        [
+          {
+            "node": "Split Clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3: Comment Timestamps": {
+      "main": [
+        [
+          {
+            "node": "Split Clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Clips": {
+      "main": [
+        [
+          {
+            "node": "Clip Data Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clip Data Valid?": {
+      "main": [
+        [
+          {
+            "node": "Is Full Video Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Full Video Available?": {
+      "main": [
+        [
+          {
+            "node": "Cut & Crop Clip",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Section",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cut & Crop Clip": {
+      "main": [
+        [
+          {
+            "node": "Post-Download Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Section": {
+      "main": [
+        [
+          {
+            "node": "Post-Download Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post-Download Check": {
+      "main": [
+        [
+          {
+            "node": "Clip File Ready?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clip File Ready?": {
+      "main": [
+        [
+          {
+            "node": "Mark Upload Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Upload Started": {
+      "main": [
+        [
+          {
+            "node": "Read Clip Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Clip Binary": {
+      "main": [
+        [
+          {
+            "node": "Upload to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Build Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Mark Processed": {
+      "main": [
+        [
+          {
+            "node": "Mark Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Processed": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Temp Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3ab1cb1c-60e1-49ae-b6ae-83d1102ea773",
+  "meta": {
+    "instanceId": "11b2636793f66486228c70dc8e2f016120f1791bf2ee4aed22378f4acdbf2906"
+  },
+  "id": "8Lh7hoRWG6or6VIP",
+  "tags": []
+}
