@@ -889,27 +889,32 @@ def download_section():
 
     # Try section download first (fast), fall back to full video if needed
     raw_path, client = _download_best_quality(url, raw_tpl, SECTION_TIMEOUT, section=f"{start}-{end}")
+    used_full_fallback = False
 
     if not raw_path:
         log.warning("Section download failed for all clients, trying full video download")
         raw_path, client = _download_best_quality(url, raw_tpl, DOWNLOAD_TIMEOUT, section=None)
+        used_full_fallback = True
 
     if not raw_path:
         return fail(ctx, "All download attempts failed for all clients",
-                    clipIndex=clip_index, title=title,
+                    clipIndex=clip_index, title=title, start=start, end=end,
                     totalClips=total_clips, shortTitle=short_title, description=description)
 
     w, h = _probe_resolution(raw_path)
     log.info("Final source: %dx%d via client=%s", w, h, client)
 
-    ok_ff, ff_err = _ffmpeg_crop_to_short(raw_path, clip_out, 0.0, dur)
+    # If we downloaded the full video as fallback, pass the real start offset to FFmpeg.
+    # If we downloaded just the section, the clip starts at 0.
+    ffmpeg_start = start_sec if used_full_fallback else 0.0
+    ok_ff, ff_err = _ffmpeg_crop_to_short(raw_path, clip_out, ffmpeg_start, dur)
     _safe_remove(raw_path)
 
     if not ok_ff:
-        return fail(ctx, f"ffmpeg crop failed: {ff_err}", clipIndex=clip_index, title=title,
+        return fail(ctx, f"ffmpeg crop failed: {ff_err}", clipIndex=clip_index, title=title, start=start, end=end,
                     totalClips=total_clips, shortTitle=short_title, description=description)
     if not os.path.exists(clip_out):
-        return fail(ctx, "ffmpeg exited 0 but output missing", clipIndex=clip_index, title=title,
+        return fail(ctx, "ffmpeg exited 0 but output missing", clipIndex=clip_index, title=title, start=start, end=end,
                     totalClips=total_clips, shortTitle=short_title, description=description)
 
     out_w, out_h = _probe_resolution(clip_out)
@@ -1002,6 +1007,7 @@ def clip():
         return fail(ctx, f"ffmpeg clip failed: {ff_err}", clipIndex=clip_index, title=title,
                     videoPath=video_path, totalClips=total_clips, shortTitle=short_title, description=description)
     return ok(ctx, clipPath=clip_out, clipIndex=clip_index, title=title, videoPath=video_path,
+              start=start, end=end,
               totalClips=total_clips, shortTitle=short_title, description=description)
 
 @app.route("/fetch_comment_timestamps", methods=["POST"])
